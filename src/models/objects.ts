@@ -7,7 +7,7 @@ import {
   ConeGeometry,
   BoxGeometry,
   SphereGeometry,
-  MeshLambertMaterial,
+  MeshStandardMaterial,
   MeshBasicMaterial,
   PlaneGeometry,
   Scene,
@@ -17,24 +17,66 @@ import {
   DoubleSide,
   Raycaster,
   Quaternion,
-  AnimationMixer, // Added AnimationMixer
-  LoopOnce, // Added LoopOnce
+  AnimationMixer,
+  LoopOnce,
+  InstancedMesh,
+  Object3D,
+  Matrix4,
 } from "three";
 import { Character } from "../entities/character";
 import { Inventory, InteractionResult, randomFloat } from "../core/utils";
 import { Colors } from "../core/constants";
-import { createTreeFallAnimation } from "../core/animations"; // Import the fall animation
+import { createTreeFallAnimation } from "../core/animations";
 
-const treeTrunkMat = new MeshLambertMaterial({ color: Colors.PASTEL_BROWN });
-const treeFoliageMat = new MeshLambertMaterial({ color: Colors.PASTEL_GREEN });
-const rockMat = new MeshLambertMaterial({ color: Colors.PASTEL_GRAY });
-const herbMat = new MeshLambertMaterial({ color: Colors.FOREST_GREEN });
-const grassMat = new MeshBasicMaterial({
-  color: 0x558b2f,
-  side: DoubleSide,
-}); // Darker green for grass
+// Upgraded materials from Lambert to Standard for better lighting response
+const treeTrunkMat = new MeshStandardMaterial({
+  color: 0xa0724a,
+  roughness: 0.9,
+  metalness: 0.0,
+});
+const treeFoliageMats = [
+  new MeshStandardMaterial({
+    color: 0x5a9e3c,
+    roughness: 0.8,
+    metalness: 0.0,
+  }),
+  new MeshStandardMaterial({
+    color: 0x4a8e2c,
+    roughness: 0.8,
+    metalness: 0.0,
+  }),
+  new MeshStandardMaterial({
+    color: 0x6aae4c,
+    roughness: 0.8,
+    metalness: 0.0,
+  }),
+];
+const rockMats = [
+  new MeshStandardMaterial({
+    color: 0x8a9aaa,
+    roughness: 0.85,
+    metalness: 0.05,
+  }),
+  new MeshStandardMaterial({
+    color: 0x7a8a9a,
+    roughness: 0.9,
+    metalness: 0.05,
+  }),
+  new MeshStandardMaterial({
+    color: 0x9aaabb,
+    roughness: 0.8,
+    metalness: 0.05,
+  }),
+];
+const herbMat = new MeshStandardMaterial({
+  color: 0x3d8b37,
+  roughness: 0.7,
+  metalness: 0.0,
+  emissive: 0x0a2a08,
+  emissiveIntensity: 0.2,
+});
 
-// Base health values for resources (adjust as needed)
+// Base health values for resources
 const BASE_HEALTH = {
   wood: 100,
   stone: 150,
@@ -94,7 +136,7 @@ export class InteractableObject {
     if (!inventory || !game)
       return { type: "error", message: "Internal error." };
     switch (this.interactionType) {
-      case "retrieve": // Kept for potential simple pickup items
+      case "retrieve":
         const itemName = this.data as string;
         if (inventory.addItem(itemName, 1)) {
           message = `Picked up: ${itemName}`;
@@ -127,7 +169,6 @@ export class InteractableObject {
           );
           return { type: "error", message: "Inventory full" };
         }
-      // "attack" interaction is handled by Character.performAttack, not here
       default:
         message = `${player.name} looked at ${this.name}.`;
         action = "examine";
@@ -160,8 +201,10 @@ export function createTree(position: Vector3): Group {
   const foliageRadius = trunkRadius * 3 + randomFloat(0, 1.5);
   const treeGroup = new Group();
   treeGroup.name = "Tree";
+
+  // Trunk with slight taper
   const trunkGeo = new CylinderGeometry(
-    trunkRadius * 0.8,
+    trunkRadius * 0.7,
     trunkRadius,
     trunkHeight,
     8
@@ -172,41 +215,58 @@ export function createTree(position: Vector3): Group {
   trunkMesh.castShadow = true;
   trunkMesh.receiveShadow = true;
   treeGroup.add(trunkMesh);
+
+  // Foliage - pick random variation for natural look
+  const foliageMat =
+    treeFoliageMats[Math.floor(Math.random() * treeFoliageMats.length)];
+
+  // Main foliage cone
   const foliageGeo = new ConeGeometry(foliageRadius, foliageHeight, 6);
-  const foliageMesh = new Mesh(foliageGeo, treeFoliageMat);
+  const foliageMesh = new Mesh(foliageGeo, foliageMat);
   foliageMesh.position.y = trunkHeight + foliageHeight / 3;
   foliageMesh.castShadow = true;
   treeGroup.add(foliageMesh);
 
-  treeGroup.position.copy(position).setY(0); // Set Y to 0 initially, Environment will adjust
+  // Second smaller cone on top for layered look
+  const topFoliageRadius = foliageRadius * 0.65;
+  const topFoliageHeight = foliageHeight * 0.7;
+  const topFoliageGeo = new ConeGeometry(topFoliageRadius, topFoliageHeight, 6);
+  const topFoliageMesh = new Mesh(topFoliageGeo, foliageMat);
+  topFoliageMesh.position.y =
+    trunkHeight + foliageHeight * 0.5 + topFoliageHeight / 3;
+  topFoliageMesh.castShadow = true;
+  treeGroup.add(topFoliageMesh);
+
+  // Slight random rotation for variety
+  treeGroup.rotation.y = Math.random() * Math.PI * 2;
+
+  treeGroup.position.copy(position).setY(0);
   const maxHealth = BASE_HEALTH.wood;
 
-  // Calculate bounding box based on the trunk mesh only
   const trunkBox = new Box3();
-  trunkMesh.updateWorldMatrix(true, false); // Ensure trunk matrix is updated relative to group
-  trunkBox.setFromObject(trunkMesh); // Calculate box in group's local space (at y=0)
+  trunkMesh.updateWorldMatrix(true, false);
+  trunkBox.setFromObject(trunkMesh);
 
-  // --- Add Animation Mixer and Fall Action ---
   const mixer = new AnimationMixer(treeGroup);
-  const fallClip = createTreeFallAnimation(treeGroup, 1.5); // 1.5 second fall duration
+  const fallClip = createTreeFallAnimation(treeGroup, 1.5);
   const fallAction = mixer.clipAction(fallClip);
   fallAction.setLoop(LoopOnce, 1);
   fallAction.clampWhenFinished = true;
 
   treeGroup.userData = {
     isCollidable: true,
-    isInteractable: true, // Can be targeted for attack
-    interactionType: "attack", // Interaction is attacking
+    isInteractable: true,
+    interactionType: "attack",
     resource: "wood",
-    health: maxHealth, // Current health
-    maxHealth: maxHealth, // Max health
+    health: maxHealth,
+    maxHealth: maxHealth,
     isDepletable: true,
     respawnTime: 20000,
-    entityReference: treeGroup, // Reference to the Group itself
-    boundingBox: trunkBox, // Store the trunk-based bounding box
-    mixer: mixer, // Store the mixer
-    fallAction: fallAction, // Store the fall action
-    isFalling: false, // Track if the fall animation is playing
+    entityReference: treeGroup,
+    boundingBox: trunkBox,
+    mixer: mixer,
+    fallAction: fallAction,
+    isFalling: false,
   };
 
   return treeGroup;
@@ -216,6 +276,10 @@ export function createRock(position: Vector3, size: number): Group {
   const rockGroup = new Group();
   rockGroup.name = "Rock";
   const height = size * randomFloat(2, 3);
+
+  // Pick random rock material for variation
+  const rockMat = rockMats[Math.floor(Math.random() * rockMats.length)];
+
   const geo = new BoxGeometry(size, height, size * randomFloat(0.8, 1.2));
   const mesh = new Mesh(geo, rockMat);
   mesh.castShadow = true;
@@ -226,12 +290,37 @@ export function createRock(position: Vector3, size: number): Group {
     randomFloat(-0.1, 0.1) * Math.PI
   );
   rockGroup.add(mesh);
-  rockGroup.position.copy(position).setY(0); // Set Y to 0 initially
+
+  // Add a smaller rock nearby for a more natural cluster
+  if (Math.random() > 0.4) {
+    const smallSize = size * randomFloat(0.3, 0.5);
+    const smallGeo = new BoxGeometry(
+      smallSize,
+      smallSize * randomFloat(1, 2),
+      smallSize
+    );
+    const smallMesh = new Mesh(smallGeo, rockMat);
+    smallMesh.castShadow = true;
+    smallMesh.receiveShadow = true;
+    smallMesh.position.set(
+      randomFloat(-size, size) * 0.8,
+      0,
+      randomFloat(-size, size) * 0.8
+    );
+    smallMesh.rotation.set(
+      randomFloat(-0.2, 0.2),
+      randomFloat(0, Math.PI * 2),
+      randomFloat(-0.2, 0.2)
+    );
+    rockGroup.add(smallMesh);
+  }
+
+  rockGroup.position.copy(position).setY(0);
   const maxHealth = BASE_HEALTH.stone;
   rockGroup.userData = {
     isCollidable: true,
-    isInteractable: true, // Can be targeted for attack
-    interactionType: "attack", // Interaction is attacking
+    isInteractable: true,
+    interactionType: "attack",
     resource: "stone",
     health: maxHealth,
     maxHealth: maxHealth,
@@ -252,12 +341,12 @@ export function createHerb(position: Vector3): Group {
   const mesh = new Mesh(geo, herbMat);
   mesh.castShadow = true;
   herbGroup.add(mesh);
-  herbGroup.position.copy(position).setY(size); // Set Y based on size
+  herbGroup.position.copy(position).setY(size);
   const maxHealth = BASE_HEALTH.herb;
   herbGroup.userData = {
-    isCollidable: true, // Herbs usually aren't collidable
-    isInteractable: true, // Can be targeted for attack
-    interactionType: "attack", // Interaction is attacking
+    isCollidable: true,
+    isInteractable: true,
+    interactionType: "attack",
     resource: "herb",
     health: maxHealth,
     maxHealth: maxHealth,
@@ -272,33 +361,49 @@ export function createHerb(position: Vector3): Group {
 
 // --- Decorative Elements ---
 
+// Optimized grass using InstancedMesh for massive draw call reduction
 export function createGrassPatch(position: Vector3, terrain: Mesh): Group {
   const patchGroup = new Group();
   patchGroup.name = "Grass Patch";
-  const bladeCount = MathUtils.randInt(50, 150);
+  const bladeCount = MathUtils.randInt(80, 200);
   const patchRadius = 5;
 
-  for (let i = 0; i < bladeCount; i++) {
-    const bladeHeight = randomFloat(0.2, 1);
-    const bladeWidth = randomFloat(0.02, 0.04);
-    const bladeGeo = new PlaneGeometry(bladeWidth, bladeHeight);
-    const bladeMesh = new Mesh(bladeGeo, grassMat);
+  const bladeGeo = new PlaneGeometry(0.04, 0.6);
+  // Shift geometry so blade grows upward from base
+  bladeGeo.translate(0, 0.3, 0);
 
+  const grassColors = [0x4a7a2e, 0x5a8a3e, 0x3a6a1e, 0x6a9a4e];
+  const grassMat = new MeshBasicMaterial({
+    color: grassColors[Math.floor(Math.random() * grassColors.length)],
+    side: DoubleSide,
+  });
+
+  const instancedGrass = new InstancedMesh(bladeGeo, grassMat, bladeCount);
+  instancedGrass.frustumCulled = true;
+
+  const dummy = new Object3D();
+  for (let i = 0; i < bladeCount; i++) {
     const angle = Math.random() * Math.PI * 2;
     const radius = Math.random() * patchRadius;
-    bladeMesh.position.set(
+    dummy.position.set(
       Math.cos(angle) * radius,
-      bladeHeight / 2,
+      0,
       Math.sin(angle) * radius
     );
-
-    bladeMesh.rotation.y = Math.random() * Math.PI * 2;
-    bladeMesh.rotation.x = randomFloat(-0.2, 0.2);
-    bladeMesh.rotation.z = randomFloat(-0.2, 0.2);
-
-    patchGroup.add(bladeMesh);
+    const bladeHeight = randomFloat(0.4, 1.2);
+    dummy.scale.set(1, bladeHeight, 1);
+    dummy.rotation.set(
+      randomFloat(-0.15, 0.15),
+      Math.random() * Math.PI * 2,
+      randomFloat(-0.15, 0.15)
+    );
+    dummy.updateMatrix();
+    instancedGrass.setMatrixAt(i, dummy.matrix);
   }
+  instancedGrass.instanceMatrix.needsUpdate = true;
+  patchGroup.add(instancedGrass);
 
+  // Place on terrain
   const raycaster = new Raycaster();
   raycaster.set(
     new Vector3(position.x, 100, position.z),
@@ -322,18 +427,18 @@ export function createGrassPatch(position: Vector3, terrain: Mesh): Group {
   return patchGroup;
 }
 
-const flowerColors = [0xff69b4, 0xffff00, 0x9370db, 0xffa500]; // Pink, Yellow, Purple, Orange
+const flowerColors = [0xff6b8a, 0xffd93d, 0xb47de8, 0xff8c42, 0xff4d6d, 0x48c9b0];
 
 function createFlower(colorHex: number): Group {
   const flowerGroup = new Group();
-  const stemHeight = randomFloat(0.15, 1);
-  const stemRadius = 0.01;
-  const petalSize = randomFloat(0.03, 0.05);
-  const petalCount = MathUtils.randInt(4, 6);
+  const stemHeight = randomFloat(0.15, 0.8);
+  const stemRadius = 0.015;
+  const petalSize = randomFloat(0.04, 0.07);
+  const petalCount = MathUtils.randInt(4, 7);
 
   // Stem
   const stemGeo = new CylinderGeometry(stemRadius, stemRadius, stemHeight, 4);
-  const stemMat = new MeshBasicMaterial({ color: 0x228b22 }); // Forest green
+  const stemMat = new MeshBasicMaterial({ color: 0x2d6b1e });
   const stemMesh = new Mesh(stemGeo, stemMat);
   stemMesh.position.y = stemHeight / 2;
   flowerGroup.add(stemMesh);
@@ -347,7 +452,7 @@ function createFlower(colorHex: number): Group {
   for (let i = 0; i < petalCount; i++) {
     const petalMesh = new Mesh(petalGeo, petalMat);
     const angle = (i / petalCount) * Math.PI * 2;
-    const petalRadius = petalSize * 0.6;
+    const petalRadius = petalSize * 0.7;
 
     petalMesh.position.set(
       Math.cos(angle) * petalRadius,
@@ -360,13 +465,20 @@ function createFlower(colorHex: number): Group {
     flowerGroup.add(petalMesh);
   }
 
+  // Flower center
+  const centerGeo = new SphereGeometry(petalSize * 0.3, 4, 4);
+  const centerMat = new MeshBasicMaterial({ color: 0xfff176 });
+  const centerMesh = new Mesh(centerGeo, centerMat);
+  centerMesh.position.y = stemHeight + petalSize * 0.15;
+  flowerGroup.add(centerMesh);
+
   return flowerGroup;
 }
 
 export function createFlowerPatch(position: Vector3, terrain: Mesh): Group {
   const patchGroup = new Group();
   patchGroup.name = "Flower Patch";
-  const flowerCount = MathUtils.randInt(30, 70);
+  const flowerCount = MathUtils.randInt(20, 50);
   const patchRadius = 4;
 
   for (let i = 0; i < flowerCount; i++) {

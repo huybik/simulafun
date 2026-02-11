@@ -156,6 +156,21 @@ export function runGameLoopStep(game: Game, profiler: Profiler): void {
     game.thirdPersonCamera!.update(deltaTime, game.collidableObjects);
     profiler.end("Camera.update");
 
+    // Dynamic shadow camera follows player for high-quality nearby shadows
+    profiler.start("ShadowCamera.update");
+    const dirLight = game.scene?.userData?.directionalLight;
+    if (dirLight && game.activeCharacter?.mesh) {
+      const playerPos = game.activeCharacter.mesh.position;
+      dirLight.target.position.set(playerPos.x, playerPos.y, playerPos.z);
+      dirLight.position.set(
+        playerPos.x + 80,
+        playerPos.y + 160,
+        playerPos.z + 60
+      );
+      dirLight.target.updateMatrixWorld();
+    }
+    profiler.end("ShadowCamera.update");
+
     profiler.start("PortalManager.animate");
     game.portalManager.animatePortals();
     profiler.end("PortalManager.animate");

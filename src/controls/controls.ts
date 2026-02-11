@@ -13,6 +13,7 @@ export class Controls {
   mouse: MouseState = { x: 0, y: 0, dx: 0, dy: 0, buttons: {} };
   isPointerLocked: boolean = false;
   playerRotationSensitivity: number = 0.0025;
+  maxYawPerFrame: number = 0.08; // ~4.5 degrees max rotation per frame
   moveState: MoveState = {
     forward: 0,
     right: 0,
@@ -260,7 +261,9 @@ export class Controls {
     ) {
       const sensitivity = this.playerRotationSensitivity;
       if (Math.abs(this.mouse.dx) > 0) {
-        const yawDelta = -this.mouse.dx * sensitivity;
+        let yawDelta = -this.mouse.dx * sensitivity;
+        // Clamp rotation to prevent snapping on fast mouse movement
+        yawDelta = Math.max(-this.maxYawPerFrame, Math.min(this.maxYawPerFrame, yawDelta));
         this.player.mesh!.rotateY(yawDelta);
       }
       if (this.cameraController && Math.abs(this.mouse.dy) > 0) {

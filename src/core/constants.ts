@@ -1,6 +1,6 @@
 // File: /src/core/constants.ts
 export const WORLD_SIZE = 100;
-export const TERRAIN_SEGMENTS = 15;
+export const TERRAIN_SEGMENTS = 60;
 
 export const CHARACTER_HEIGHT = 1.8;
 export const CHARACTER_RADIUS = 0.4;

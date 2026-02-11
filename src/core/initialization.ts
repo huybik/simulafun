@@ -43,18 +43,55 @@ export const initializeGame = {
       powerPreference: "high-performance",
     });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
     document.getElementById("game-container")?.appendChild(renderer.domElement);
     return renderer;
   },
 
   initScene(game: Game): Scene {
     const scene = new Scene();
-    scene.background = new Color(0x87ceeb);
-    scene.fog = new Fog(0x87ceeb, 15, 50);
+    scene.background = new Color(0x78b8e0);
+    scene.fog = new Fog(0x9ec8e0, 25, 80);
     setupLighting(scene);
+    // Create sky dome
+    const skyGeo = new THREE.SphereGeometry(500, 32, 16);
+    const skyMat = new THREE.ShaderMaterial({
+      uniforms: {
+        topColor: { value: new Color(0x4a90d9) },
+        bottomColor: { value: new Color(0xc8e6f5) },
+        offset: { value: 20 },
+        exponent: { value: 0.4 },
+      },
+      vertexShader: `
+        varying vec3 vWorldPosition;
+        void main() {
+          vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+          vWorldPosition = worldPosition.xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 topColor;
+        uniform vec3 bottomColor;
+        uniform float offset;
+        uniform float exponent;
+        varying vec3 vWorldPosition;
+        void main() {
+          float h = normalize(vWorldPosition + offset).y;
+          gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);
+        }
+      `,
+      side: THREE.BackSide,
+      depthWrite: false,
+    });
+    const sky = new THREE.Mesh(skyGeo, skyMat);
+    scene.add(sky);
+
     const terrain = createTerrain(game.worldSize, TERRAIN_SEGMENTS);
     scene.add(terrain);
     game.collidableObjects.push(terrain);
