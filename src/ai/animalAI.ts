@@ -4,6 +4,7 @@ import { Animal } from "../entities/animals";
 import { MoveState, getTerrainHeight } from "../core/utils";
 import { Character } from "../entities/character";
 import { Entity } from "../entities/entitiy"; // Import Entity
+import { ANIMAL_AI_CONFIG } from "../core/constants";
 
 export class AnimalAIController {
   animal: Animal;
@@ -11,14 +12,14 @@ export class AnimalAIController {
   previousAiState: string = "idle";
   homePosition: Vector3;
   destination: Vector3 | null = null;
-  actionTimer: number = 5; // Time until next decision in idle state
-  attackCooldown: number = 2.0;
+  actionTimer: number = ANIMAL_AI_CONFIG.actionTimer;
+  attackCooldown: number = ANIMAL_AI_CONFIG.attackCooldown;
   lastAttackTime: number = 0;
   target: Character | null = null; // Target for attacking
-  attackRange: number = 1.5;
-  detectionRange: number = 15.0;
+  attackRange: number = ANIMAL_AI_CONFIG.attackRange;
+  detectionRange: number = ANIMAL_AI_CONFIG.detectionRange;
   detectionRangeSq: number; // Store squared value
-  roamRadius: number = 20.0;
+  roamRadius: number = ANIMAL_AI_CONFIG.roamRadius;
   persistentAction: string | null = null;
   // Removed persona, targetResource, targetAction, message, persistentAction as they are not used here
 

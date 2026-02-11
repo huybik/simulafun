@@ -37,7 +37,7 @@ import {
   InventoryItem,
   EventEntry,
 } from "./core/utils.ts";
-import { WORLD_SIZE, TERRAIN_SEGMENTS } from "./core/constants";
+import { WORLD_SIZE, TERRAIN_SEGMENTS, GAME_LOOP } from "./core/constants";
 import { loadModels } from "./core/assetLoader";
 import { createTerrain } from "./core/terrain";
 import { setupLighting } from "./core/lighting";
@@ -111,11 +111,11 @@ export class Game {
   public characterSwitchingEnabled: boolean = false;
 
   public lastAiUpdateTime: number = 0; // Made public for gameLoop
-  public aiUpdateInterval: number = 0.2; // Made public for gameLoop
+  public aiUpdateInterval: number = GAME_LOOP.aiUpdateInterval; // Made public for gameLoop
   public lastQuestCheckTime: number = 0; // Made public for gameLoop
-  public questCheckInterval: number = 0.5; // Made public for gameLoop
+  public questCheckInterval: number = GAME_LOOP.questCheckInterval; // Made public for gameLoop
   private lastUpdateTime: number = 0;
-  private targetFrameTime: number = 1000 / 42; // ~23.8 ms for 42 FPS
+  private targetFrameTime: number = 1000 / GAME_LOOP.targetFPS;
 
   public models!: Record<string, { scene: Group; animations: AnimationClip[] }>;
   private modelsPromise: Promise<

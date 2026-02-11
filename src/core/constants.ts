@@ -29,3 +29,34 @@ export const AIM_TOLERANCE = Math.PI / 6;
 export const PORTAL_RADIUS = 2;
 export const PORTAL_TUBE = 0.2;
 export const PORTAL_PARTICLE_COUNT = 1000;
+
+// --- AI / API Config ---
+export const GEMINI_MODEL = "gemini-flash-latest";
+export const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+
+export const AI_CONFIG = {
+  apiCallCooldown: 30000,
+  affectedCooldown: 15000,
+  actionTimerBase: 5,
+  actionTimerVariance: 5,
+  chatDecisionDelay: 7000,
+  interactionDistance: 3,
+  attackDistance: 2,
+  followDistance: 5,
+  stoppingDistance: 3,
+} as const;
+
+export const ANIMAL_AI_CONFIG = {
+  actionTimer: 5,
+  attackCooldown: 2.0,
+  attackRange: 1.5,
+  detectionRange: 15.0,
+  roamRadius: 20.0,
+} as const;
+
+// --- Game Loop Config ---
+export const GAME_LOOP = {
+  aiUpdateInterval: 0.2,
+  questCheckInterval: 0.5,
+  targetFPS: 42,
+} as const;

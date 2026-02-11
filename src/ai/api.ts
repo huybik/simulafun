@@ -8,31 +8,33 @@ import { AIController } from "./npcAI"; // Import AIController for type hinting
 import { InteractionSystem } from "../systems/interaction"; // Import InteractionSystem for type hinting
 import { InventoryItem } from "../core/utils"; // Import InventoryItem
 
+import { GEMINI_MODEL, GEMINI_API_BASE } from "../core/constants";
+
 // --- API Key Management ---
-const API_KEY1 = import.meta.env.VITE_API_KEY1;
-const API_KEY2 = import.meta.env.VITE_API_KEY2;
+const API_KEY1 = import.meta.env.VITE_GEMINI_API_KEY1;
+const API_KEY2 = import.meta.env.VITE_GEMINI_API_KEY2;
 let switched = false;
 
 let currentApiKey = API_KEY1 || "";
-let API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${currentApiKey}`;
+let API_URL = `${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent?key=${currentApiKey}`;
 
 function switchApiKey(): void {
   if (currentApiKey === API_KEY1) {
     currentApiKey = API_KEY2;
-    console.log("Switched to VITE_API_KEY2 due to rate limit.");
+    console.log("Switched to VITE_GEMINI_API_KEY2 due to rate limit.");
   } else if (currentApiKey === API_KEY2) {
     currentApiKey = API_KEY1;
-    console.log("Switched back to VITE_API_KEY1.");
+    console.log("Switched back to VITE_GEMINI_API_KEY1.");
   } else {
     console.warn("No alternate API key available for rotation.");
   }
-  API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${currentApiKey}`;
+  API_URL = `${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent?key=${currentApiKey}`;
 }
 
 // --- Gemini API Call ---
 export async function sendToGemini(prompt: string): Promise<string | null> {
   if (!currentApiKey) {
-    console.warn("API_KEY is not configured.");
+    console.warn("VITE_GEMINI_API_KEY is not configured.");
     return null;
   }
   try {

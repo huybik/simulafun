@@ -11,6 +11,7 @@ import {
   updateObservation,
   handleChatResponse,
 } from "./api";
+import { AI_CONFIG } from "../core/constants";
 
 export class AIController {
   character: Character;
@@ -18,11 +19,11 @@ export class AIController {
   previousAiState: string = "idle";
   homePosition: Vector3;
   destination: Vector3 | null = null;
-  actionTimer: number = 5;
-  interactionDistance: number = 3; // Distance for chat/trade
-  attackDistance: number = 2; // Distance for attacking entities/resources
-  followDistance: number = 5; // Desired distance when following
-  stoppingDistance: number = 3; // Distance to stop when following/moving to target
+  actionTimer: number = AI_CONFIG.actionTimerBase;
+  interactionDistance: number = AI_CONFIG.interactionDistance;
+  attackDistance: number = AI_CONFIG.attackDistance;
+  followDistance: number = AI_CONFIG.followDistance;
+  stoppingDistance: number = AI_CONFIG.stoppingDistance;
   searchRadius: number;
   roamRadius: number;
   target: Entity | Object3D | null = null; // Target can be Entity or resource Object3D
@@ -34,7 +35,7 @@ export class AIController {
   tradeItemsGive: InventoryItem[] = []; // Items NPC wants to give
   tradeItemsReceive: InventoryItem[] = []; // Items NPC wants to receive
   private lastApiCallTime: number = 0;
-  private apiCallCooldown: number = 30000;
+  private apiCallCooldown: number = AI_CONFIG.apiCallCooldown;
   lastObservation: Observation | null = null;
   // Updated persistentAction to support both targetType and targetId
   persistentAction: {
@@ -44,7 +45,7 @@ export class AIController {
   } | null = null;
   private chatDecisionTimer: ReturnType<typeof setTimeout> | null = null;
   private lastAffectedTime: number = 0;
-  private affectedCooldown: number = 15000;
+  private affectedCooldown: number = AI_CONFIG.affectedCooldown;
   public lastLoggedAttackTargetId: string | null = null; // Track last logged attack target
 
   constructor(character: Character) {
@@ -72,7 +73,7 @@ export class AIController {
 
     if (this.isAffectedByEntities()) {
       this.decideNextAction();
-      this.actionTimer = 5 + Math.random() * 5;
+      this.actionTimer = AI_CONFIG.actionTimerBase + Math.random() * AI_CONFIG.actionTimerVariance;
     }
 
     const currentTime = Date.now();
@@ -83,7 +84,7 @@ export class AIController {
       this.apiCallCooldown + (Math.random() * 10000 - 5000);
 
     if (this.actionTimer <= 0 && this.chatDecisionTimer === null) {
-      this.actionTimer = 5 + Math.random() * 5;
+      this.actionTimer = AI_CONFIG.actionTimerBase + Math.random() * AI_CONFIG.actionTimerVariance;
       if (canCallApi) {
         this.decideNextAction();
         this.lastApiCallTime = currentTime;
@@ -351,7 +352,7 @@ export class AIController {
     this.chatDecisionTimer = setTimeout(() => {
       this.decideNextAction();
       this.chatDecisionTimer = null;
-    }, 7000);
+    }, AI_CONFIG.chatDecisionDelay);
   }
 
   private justCompletedAction(): boolean {
