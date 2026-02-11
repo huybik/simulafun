@@ -187,10 +187,20 @@ export function updateObservation(
 export function generatePrompt(controller: AIController): string {
   const persona = controller.persona;
   const observation = controller.observation;
-  const eventLog = controller.character.eventLog.entries
-    .slice(-10)
-    .map((entry) => `[${entry.timestamp}] ${entry.message}`)
-    .join("\n");
+
+  // Build retrieval query from current situation
+  const queryParts: string[] = [];
+  if (observation?.nearbyCharacters.length) {
+    queryParts.push(...observation.nearbyCharacters.map((c) => c.id));
+  }
+  if (observation?.nearbyAnimals.length) {
+    queryParts.push(...observation.nearbyAnimals.map((a) => a.type));
+  }
+  if (controller.aiState !== "idle") queryParts.push(controller.aiState);
+  const query = queryParts.join(" ") || controller.character.name;
+
+  const retrievedMemories = controller.memoryStream.retrieve(query);
+  const memoriesText = controller.memoryStream.formatForPrompt(retrievedMemories);
 
   // Format inventory for the prompt
   const formatInventory = (inv: Array<InventoryItem | null>): string => {
@@ -280,8 +290,8 @@ ${nearbyAnimals}
 Nearby objects:
 ${nearbyObjects}
 
-Here are the recent events you are aware of:
-${eventLog}
+Your memories (things you remember):
+${memoriesText}
 
 Based on this information, decide your next action. If player told you to do something don't ask for clarification or guidance, just do it.
 Attack target to gather resource. Trade to give or receive item from target. Follow target to stay close to them.
@@ -333,10 +343,13 @@ export function generateChatPrompt(
   initiatorMessage: string,
   chatHistory: Array<{ role: string; text: string }> = []
 ): string {
-  const recentEvents = target.eventLog.entries
-    .slice(-5)
-    .map((entry) => entry.message)
-    .join("\n");
+  // Retrieve memories relevant to the initiator
+  const memories = target.aiController
+    ? target.aiController.memoryStream.retrieve(initiator.name, 3)
+    : [];
+  const memoriesText = memories.length > 0
+    ? memories.map((m) => `- ${m.content}`).join("\n")
+    : "Nothing significant.";
   const persona = target.persona || "a friendly villager";
 
   // Get language from localStorage or default to 'en'
@@ -353,8 +366,8 @@ You are an NPC named ${target.name} with the following persona: ${persona}
 ${historyText}
 The character named ${initiator.name} just said to you: "${initiatorMessage}"
 
-Recent events observed by you:
-${recentEvents || "Nothing significant recently."}
+Your memories about ${initiator.name}:
+${memoriesText}
 
 Respond to the character in brief max 20 words as a JSON object like {"response": "Your response here in ${language} "}.
 
@@ -397,7 +410,13 @@ export async function handleChatResponse(
       );
     }
 
+    // Encode both sides of conversation into memory
     if (target.aiController) {
+      target.aiController.encodeActionMemory(
+        "chat",
+        initiator.name,
+        `${initiator.name} said "${message}" to me, I replied "${npcMessage}"`
+      );
       target.aiController.scheduleNextActionDecision();
     }
   } catch (error) {

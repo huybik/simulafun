@@ -54,6 +54,23 @@ export const ANIMAL_AI_CONFIG = {
   roamRadius: 20.0,
 } as const;
 
+// --- Memory Config ---
+export const MEMORY_CONFIG = {
+  maxMemories: 150,
+  retrieveLimit: 5,
+  decayRate: 0.995, // per hour
+  reflectionThreshold: 3.0, // cumulative importance before reflection triggers
+  reflectionInputCount: 10, // how many recent memories to feed into reflection
+  importanceThresholds: {
+    combat: 0.7,
+    conversation: 0.5,
+    trade: 0.4,
+    nearDeath: 0.9,
+    death: 1.0,
+    environmental: 0.2,
+  },
+} as const;
+
 // --- Game Loop Config ---
 export const GAME_LOOP = {
   aiUpdateInterval: 0.2,

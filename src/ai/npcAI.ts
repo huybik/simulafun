@@ -11,7 +11,8 @@ import {
   updateObservation,
   handleChatResponse,
 } from "./api";
-import { AI_CONFIG } from "../core/constants";
+import { AI_CONFIG, MEMORY_CONFIG } from "../core/constants";
+import { MemoryStream } from "./memoryStream";
 
 export class AIController {
   character: Character;
@@ -47,6 +48,7 @@ export class AIController {
   private lastAffectedTime: number = 0;
   private affectedCooldown: number = AI_CONFIG.affectedCooldown;
   public lastLoggedAttackTargetId: string | null = null; // Track last logged attack target
+  public memoryStream: MemoryStream = new MemoryStream();
 
   constructor(character: Character) {
     this.character = character;
@@ -206,6 +208,7 @@ export class AIController {
                   this.character.mesh!.position
                 );
               }
+              this.encodeActionMemory("chat", this.target.name, `I said "${this.message}" to ${this.target.name}`);
               handleChatResponse(this.target, this.character, this.message);
               this.resetStateAfterAction();
             } else if (
@@ -220,6 +223,7 @@ export class AIController {
                 this.tradeItemsGive,
                 this.tradeItemsReceive
               );
+              this.encodeActionMemory("trade", this.target.name, `I traded with ${this.target.name}`);
               this.resetStateAfterAction();
             } else if (this.targetAction === "follow") {
               // Transition to the 'following' state once close enough
@@ -403,6 +407,9 @@ export class AIController {
       updateObservation(this, this.character.game.entities);
     }
 
+    // Encode notable changes as memories
+    this.encodeObservationMemories();
+
     // Don't decide if already following or deciding
     if (this.aiState === "following" || this.aiState === "deciding") return;
 
@@ -425,6 +432,11 @@ export class AIController {
       } else {
         this.fallbackToDefaultBehavior();
       }
+
+      // Trigger reflection if threshold met (piggyback on decision cycle)
+      if (this.memoryStream.shouldReflect()) {
+        this.memoryStream.reflect(this.character.name);
+      }
     } catch (error) {
       console.error(`Error querying API for ${this.character.name}:`, error);
       // Ensure fallback doesn't run if dead (e.g., died during API call)
@@ -434,6 +446,74 @@ export class AIController {
         this.aiState = "dead"; // Ensure state remains dead on error
       }
     }
+  }
+
+  private encodeObservationMemories(): void {
+    if (!this.observation || !this.lastObservation) return;
+
+    const self = this.observation.self;
+    const lastSelf = this.lastObservation.self;
+
+    // Health lost — encode as combat memory
+    if (self.health < lastSelf.health) {
+      const damage = lastSelf.health - self.health;
+      const attacker = this.character.lastAttacker;
+      const attackerName = attacker?.name || "something";
+      this.memoryStream.add(
+        `I was hit by ${attackerName} and lost ${damage.toFixed(0)} health (now ${self.health.toFixed(0)})`,
+        "observation",
+        MEMORY_CONFIG.importanceThresholds.combat,
+        attacker ? [attackerName] : []
+      );
+
+      // Near-death memory
+      if (self.health < self.health * 0.3 && lastSelf.health >= self.health * 0.3) {
+        this.memoryStream.add(
+          `I nearly died from ${attackerName}'s attack`,
+          "observation",
+          MEMORY_CONFIG.importanceThresholds.nearDeath,
+          attacker ? [attackerName] : []
+        );
+      }
+    }
+
+    // Detect new characters appearing nearby
+    const lastIds = new Set(this.lastObservation.nearbyCharacters.map((c) => c.id));
+    for (const char of this.observation.nearbyCharacters) {
+      if (!lastIds.has(char.id) && !char.isDead) {
+        this.memoryStream.add(
+          `${char.id} appeared nearby`,
+          "observation",
+          MEMORY_CONFIG.importanceThresholds.environmental,
+          [char.id]
+        );
+      }
+    }
+
+    // Detect nearby character deaths
+    for (const char of this.observation.nearbyCharacters) {
+      const prev = this.lastObservation.nearbyCharacters.find((c) => c.id === char.id);
+      if (prev && !prev.isDead && char.isDead) {
+        this.memoryStream.add(
+          `${char.id} died nearby`,
+          "observation",
+          MEMORY_CONFIG.importanceThresholds.combat,
+          [char.id]
+        );
+      }
+    }
+  }
+
+  encodeActionMemory(action: string, targetName: string, details: string): void {
+    const typeMap: Record<string, { type: "observation" | "episode"; importance: number }> = {
+      attack: { type: "episode", importance: MEMORY_CONFIG.importanceThresholds.combat },
+      chat: { type: "episode", importance: MEMORY_CONFIG.importanceThresholds.conversation },
+      trade: { type: "episode", importance: MEMORY_CONFIG.importanceThresholds.trade },
+      follow: { type: "episode", importance: MEMORY_CONFIG.importanceThresholds.conversation },
+      death: { type: "observation", importance: MEMORY_CONFIG.importanceThresholds.death },
+    };
+    const config = typeMap[action] || { type: "observation" as const, importance: 0.3 };
+    this.memoryStream.add(details, config.type, config.importance, [targetName]);
   }
 
   fallbackToDefaultBehavior(): void {
