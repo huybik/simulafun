@@ -117,20 +117,20 @@
 
       <!-- Chat Interface -->
       <div id="chat-container" class="hidden">
+        <button id="chat-close-btn" title="Close chat">&times;</button>
+        <div id="chat-messages"></div>
         <div id="chat-suggestions-container" class="hidden">
           <ul id="chat-suggestions-list">
             <li data-command="/trade">/trade</li>
             <li data-command="/request">/request</li>
-            <!-- Add more suggestions if needed -->
           </ul>
         </div>
         <div class="chat-input-wrapper">
           <input
             type="text"
             id="chat-input"
-            placeholder="Type or hold mic to speak..."
+            placeholder="Type a message..."
           />
-          <!-- <button id="mic-button" title="Hold to Speak">🎤</button> -->
         </div>
       </div>
 

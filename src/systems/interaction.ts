@@ -38,19 +38,22 @@ export class InteractionSystem {
   game: Game;
   chatContainer: HTMLElement | null;
   chatInput: HTMLInputElement | null;
+  chatMessagesEl: HTMLElement | null;
   chatSuggestionsContainer: HTMLElement | null;
   chatSuggestionsList: HTMLElement | null;
   isChatOpen: boolean = false;
   chatTarget: Character | null = null;
   boundSendMessage: (() => Promise<void>) | null = null;
   boundHandleChatKeyDown: ((e: KeyboardEvent) => void) | null = null;
-  boundCloseChat: (() => void) | null = null;
   boundHandleChatInput: (() => void) | null = null;
   boundHandleChatFocus: (() => void) | null = null;
   boundHandleChatBlur: (() => void) | null = null;
   boundHandleSuggestionClick: ((e: MouseEvent) => void) | null = null;
   droppedItemManager: DroppedItemManager;
   public isSwitchTargetAvailable: boolean = false;
+
+  private chatHistoryMap: Map<string, Array<{ role: string; text: string }>> =
+    new Map();
 
   private cameraDirection = new Vector3();
   private objectDirection = new Vector3();
@@ -80,14 +83,16 @@ export class InteractionSystem {
       document.getElementById("interaction-prompt");
     this.chatContainer = document.getElementById("chat-container");
     this.chatInput = document.getElementById("chat-input") as HTMLInputElement;
-    if (this.chatInput) {
-      this.chatInput.addEventListener("input", this.handleChatInput.bind(this));
-      this.chatInput.addEventListener("blur", this.handleChatBlur.bind(this));
-    }
+    this.chatMessagesEl = document.getElementById("chat-messages");
     this.chatSuggestionsContainer = document.getElementById(
       "chat-suggestions-container"
     );
     this.chatSuggestionsList = document.getElementById("chat-suggestions-list");
+
+    const closeBtn = document.getElementById("chat-close-btn");
+    if (closeBtn) {
+      closeBtn.addEventListener("click", () => this.closeChatInterface());
+    }
 
     this.boundHandleChatInput = this.handleChatInput.bind(this);
     this.boundHandleChatFocus = this.handleChatFocus.bind(this);
@@ -342,13 +347,6 @@ export class InteractionSystem {
         this.hideChatSuggestions();
       }
     }, 150);
-    if (
-      this.chatInput &&
-      this.chatInput.value.trim() !== "" &&
-      this.boundSendMessage
-    ) {
-      this.boundSendMessage();
-    }
   }
 
   handleSuggestionClick(event: MouseEvent): void {
@@ -386,6 +384,21 @@ export class InteractionSystem {
     }
   }
 
+  private addChatBubble(sender: string, text: string, isPlayer: boolean): void {
+    if (!this.chatMessagesEl) return;
+    const bubble = document.createElement("div");
+    bubble.className = `chat-bubble ${isPlayer ? "player" : "npc"}`;
+    const senderEl = document.createElement("div");
+    senderEl.className = "chat-sender";
+    senderEl.textContent = sender;
+    const textEl = document.createElement("div");
+    textEl.textContent = text;
+    bubble.appendChild(senderEl);
+    bubble.appendChild(textEl);
+    this.chatMessagesEl.appendChild(bubble);
+    this.chatMessagesEl.scrollTop = this.chatMessagesEl.scrollHeight;
+  }
+
   async openChatInterface(target: Character): Promise<void> {
     if (this.chatInput) {
       this.chatInput.disabled = false;
@@ -401,19 +414,36 @@ export class InteractionSystem {
       return;
     }
 
-    this.game.setPauseState(true);
     this.isChatOpen = true;
     this.chatTarget = target;
     this.chatContainer.classList.remove("hidden");
     this.handleChatInput();
+
+    // Restore chat history for this character
+    if (this.chatMessagesEl) {
+      this.chatMessagesEl.innerHTML = "";
+      const history = this.chatHistoryMap.get(target.id) || [];
+      for (const msg of history) {
+        const isPlayer = msg.role === "player";
+        const sender = isPlayer ? this.player.name : target.name;
+        this.addChatBubble(sender, msg.text, isPlayer);
+      }
+    }
+
+    // Make NPC face player and idle during conversation
+    target.lookAt(this.player.mesh!.position);
+    if (target.aiController) {
+      target.aiController.aiState = "idle";
+      target.aiController.persistentAction = null;
+    }
+
+    // Frame camera on conversation
+    this.game.thirdPersonCamera?.setConversationTarget(target.mesh!);
+
     if (this.chatInput) {
       setTimeout(() => {
         this.chatInput?.focus();
       }, 100);
-    }
-    if (this.chatTarget && this.chatTarget.aiController) {
-      this.chatTarget.aiController.aiState = "idle";
-      this.chatTarget.aiController.persistentAction = null;
     }
 
     if (!this.boundSendMessage) {
@@ -437,18 +467,15 @@ export class InteractionSystem {
       };
     }
 
-    if (!this.boundCloseChat) {
-      this.boundCloseChat = () => {
-        this.closeChatInterface();
-      };
-    }
-
     this.chatInput.removeEventListener("keydown", this.boundHandleChatKeyDown);
     this.chatInput.addEventListener("keydown", this.boundHandleChatKeyDown);
   }
 
   closeChatInterface(): void {
     if (!this.isChatOpen || !this.chatContainer || !this.chatInput) return;
+
+    // Resume NPC AI
+    this.chatTarget?.aiController?.scheduleNextActionDecision();
 
     this.isChatOpen = false;
     this.chatTarget = null;
@@ -464,11 +491,8 @@ export class InteractionSystem {
       );
     }
 
-    this.game.setPauseState(false);
-
-    requestAnimationFrame(() => {
-      this.game.renderer?.domElement.focus();
-    });
+    // Return camera to normal
+    this.game.thirdPersonCamera?.setConversationTarget(null);
   }
 
   private async processChatMessage(
@@ -478,6 +502,14 @@ export class InteractionSystem {
     if (!target || !message.trim()) return;
 
     const targetAtSendStart = target;
+    const charId = targetAtSendStart.id;
+    if (!this.chatHistoryMap.has(charId)) {
+      this.chatHistoryMap.set(charId, []);
+    }
+    const history = this.chatHistoryMap.get(charId)!;
+
+    this.addChatBubble(this.player.name, message, true);
+    history.push({ role: "player", text: message });
 
     this.player.updateIntentDisplay(message);
     this.game.logEvent(
@@ -493,7 +525,12 @@ export class InteractionSystem {
     this.chatInput!.disabled = true;
     this.hideChatSuggestions();
 
-    const prompt = generateChatPrompt(targetAtSendStart, this.player, message);
+    const prompt = generateChatPrompt(
+      targetAtSendStart,
+      this.player,
+      message,
+      history
+    );
     try {
       const responseJson = await sendToGemini(prompt);
       let npcMessage = "Hmm....";
@@ -504,13 +541,12 @@ export class InteractionSystem {
             parsedText.response?.trim() || responseJson.trim() || "Hmm....";
         } catch (parseError) {
           npcMessage = responseJson.trim() || "Hmm....";
-          console.log(
-            "Chat response was not JSON, treating as string:",
-            responseJson
-          );
         }
       }
       if (this.isChatOpen && this.chatTarget === targetAtSendStart) {
+        this.addChatBubble(targetAtSendStart.name, npcMessage, false);
+        history.push({ role: "npc", text: npcMessage });
+
         targetAtSendStart.updateIntentDisplay(npcMessage);
         this.game.logEvent(
           targetAtSendStart,
@@ -522,13 +558,13 @@ export class InteractionSystem {
         );
         this.game.questManager.checkAllQuestsCompletion();
         this.game.voiceManager?.speak(npcMessage);
-      } else {
-        console.log("Chat closed or target changed before NPC response.");
       }
     } catch (error) {
       console.error("Error during chat API call:", error);
       if (this.isChatOpen && this.chatTarget === targetAtSendStart) {
-        targetAtSendStart.updateIntentDisplay("I... don't know what to say.");
+        const errorMsg = "I... don't know what to say.";
+        this.addChatBubble(targetAtSendStart.name, errorMsg, false);
+        targetAtSendStart.updateIntentDisplay(errorMsg);
         this.game.logEvent(
           targetAtSendStart,
           "chat_error",
@@ -539,8 +575,11 @@ export class InteractionSystem {
         );
       }
     } finally {
-      targetAtSendStart.aiController?.scheduleNextActionDecision();
-      this.closeChatInterface();
+      // Re-enable input for next message (don't close chat)
+      if (this.chatInput) {
+        this.chatInput.disabled = false;
+        this.chatInput.focus();
+      }
     }
   }
 }

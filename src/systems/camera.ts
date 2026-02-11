@@ -38,6 +38,10 @@ export class ThirdPersonCamera {
   private readonly terrainSlopeAdjustmentFactor: number = 0.3; // How much slope affects pitch (0 to 1)
   private readonly slopeSampleDistance: number = 1.0; // Distance ahead to sample terrain for slope
 
+  // Conversation framing
+  private conversationTarget: Object3D | null = null;
+  private conversationTargetPos = new Vector3();
+
   private targetPosition = new Vector3();
   private offset = new Vector3();
   private idealPosition = new Vector3();
@@ -71,14 +75,10 @@ export class ThirdPersonCamera {
     this.camera.lookAt(this.currentLookat);
   }
 
-  handleMouseInput(deltaX: number, deltaY: number): void {
-    // Ignore deltaY to keep pitch fixed like mobile
-    // this.pitchAngle -= deltaY * this.pitchSensitivity;
-    // this.pitchAngle = MathUtils.clamp(this.pitchAngle, this.minPitch, this.maxPitch);
-    // Record time if input is significant (only for potential future use, as pitch is fixed)
-    // if (Math.abs(deltaY) > this.userPitchInputThreshold) {
-    //     this.lastUserPitchInputTime = performance.now() / 1000;
-    // }
+  handleMouseInput(deltaX: number, deltaY: number): void {}
+
+  setConversationTarget(target: Object3D | null): void {
+    this.conversationTarget = target;
   }
 
   update(deltaTime: number, collidables: Object3D[]): void {
@@ -187,6 +187,13 @@ export class ThirdPersonCamera {
     this.idealLookat
       .copy(this.targetPosition)
       .add(new Vector3(0, targetHeight * 0.6, 0));
+
+    // Shift lookat toward conversation target for framing both characters
+    if (this.conversationTarget && this.conversationTarget.parent) {
+      this.conversationTarget.getWorldPosition(this.conversationTargetPos);
+      this.conversationTargetPos.y += targetHeight * 0.6;
+      this.idealLookat.lerp(this.conversationTargetPos, 0.4);
+    }
 
     // Smoothly interpolate current position and lookat towards their targets
     smoothVectorLerp(

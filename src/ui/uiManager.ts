@@ -119,7 +119,6 @@ export class UIManager {
     return (
       this.game.inventoryDisplay?.isOpen ||
       this.game.journalDisplay?.isOpen ||
-      this.game.interactionSystem?.isChatOpen ||
       this.isBannerVisible
     );
   }

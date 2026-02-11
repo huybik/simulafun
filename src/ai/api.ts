@@ -330,7 +330,8 @@ Intent should be less than 10 words, response only in ${language}.
 export function generateChatPrompt(
   target: Character,
   initiator: Character,
-  initiatorMessage: string
+  initiatorMessage: string,
+  chatHistory: Array<{ role: string; text: string }> = []
 ): string {
   const recentEvents = target.eventLog.entries
     .slice(-5)
@@ -341,8 +342,15 @@ export function generateChatPrompt(
   // Get language from localStorage or default to 'en'
   const language = localStorage.getItem("selectedLanguage") || "en";
 
+  // Build conversation history (exclude the current message which is last)
+  const priorHistory = chatHistory.slice(0, -1);
+  const historyText = priorHistory.length > 0
+    ? `\nConversation so far:\n${priorHistory.map((m) => `${m.role === "player" ? initiator.name : target.name}: "${m.text}"`).join("\n")}\n`
+    : "";
+
   return `
 You are an NPC named ${target.name} with the following persona: ${persona}
+${historyText}
 The character named ${initiator.name} just said to you: "${initiatorMessage}"
 
 Recent events observed by you:
