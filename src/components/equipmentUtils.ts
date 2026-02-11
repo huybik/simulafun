@@ -61,23 +61,29 @@ export function equipWeapon(
     weaponModel.rotation.set(0, 0, 0);
     weaponModel.scale.set(1, 1, 1);
 
-    const charWorldScale = new Vector3();
-    character.mesh.getWorldScale(charWorldScale);
-    const invCharScale = new Vector3(
-      charWorldScale.x === 0 ? 1 : 1 / charWorldScale.x,
-      charWorldScale.y === 0 ? 1 : 1 / charWorldScale.y,
-      charWorldScale.z === 0 ? 1 : 1 / charWorldScale.z
+    // Compensate for the bone's accumulated world scale so the weapon
+    // appears at a consistent size regardless of character model scaling.
+    const boneWorldScale = new Vector3();
+    character.rightHandBone!.getWorldScale(boneWorldScale);
+    const invBoneScale = new Vector3(
+      boneWorldScale.x === 0 ? 1 : 1 / boneWorldScale.x,
+      boneWorldScale.y === 0 ? 1 : 1 / boneWorldScale.y,
+      boneWorldScale.z === 0 ? 1 : 1 / boneWorldScale.z
     );
-    weaponModel.scale.copy(invCharScale);
-    weaponModel.scale.multiplyScalar(0.2); // Standard base scale
+    weaponModel.scale.copy(invBoneScale);
 
-    // Position adjustments (relative to hand bone)
+    // Per-weapon scale and position tuning (values are in world-space units)
     if (definition.id === "sword") {
+      weaponModel.scale.multiplyScalar(0.2);
       weaponModel.position.set(0, 0.2, 0);
     } else if (definition.id === "axe") {
+      weaponModel.scale.multiplyScalar(0.2);
       weaponModel.position.set(0, 0.25, 0);
     } else if (definition.id === "pickaxe") {
-      weaponModel.position.set(0, 0.25, 0);
+      weaponModel.scale.multiplyScalar(0.07);
+      weaponModel.position.set(0, 0.1, 0);
+    } else {
+      weaponModel.scale.multiplyScalar(0.2);
     }
 
     character.rightHandBone.add(weaponModel);
