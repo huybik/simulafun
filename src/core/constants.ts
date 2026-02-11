@@ -36,7 +36,6 @@ export const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta
 
 export const AI_CONFIG = {
   apiCallCooldown: 30000,
-  affectedCooldown: 15000,
   actionTimerBase: 5,
   actionTimerVariance: 5,
   chatDecisionDelay: 7000,
@@ -52,6 +51,23 @@ export const ANIMAL_AI_CONFIG = {
   attackRange: 1.5,
   detectionRange: 15.0,
   roamRadius: 20.0,
+} as const;
+
+// --- Reflex Config ---
+export type CombatDisposition = "aggressive" | "defensive" | "cautious";
+
+export const PROFESSION_DISPOSITION: Record<string, CombatDisposition> = {
+  Hunter: "aggressive",
+  Blacksmith: "defensive",
+  Farmer: "cautious",
+  None: "defensive",
+} as const;
+
+export const REFLEX_CONFIG = {
+  fleeHealthThreshold: 0.3, // flee when health below 30% of max
+  cautiousFightThreshold: 0.5, // cautious NPCs fight back above 50% health
+  reflexCooldown: 1000, // ms between reflex evaluations
+  fleeDuration: 5, // seconds to flee before re-evaluating
 } as const;
 
 // --- Memory Config ---

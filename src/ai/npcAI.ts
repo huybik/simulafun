@@ -11,7 +11,13 @@ import {
   updateObservation,
   handleChatResponse,
 } from "./api";
-import { AI_CONFIG, MEMORY_CONFIG } from "../core/constants";
+import {
+  AI_CONFIG,
+  MEMORY_CONFIG,
+  REFLEX_CONFIG,
+  PROFESSION_DISPOSITION,
+  CombatDisposition,
+} from "../core/constants";
 import { MemoryStream } from "./memoryStream";
 
 export class AIController {
@@ -45,10 +51,14 @@ export class AIController {
     targetId?: string;
   } | null = null;
   private chatDecisionTimer: ReturnType<typeof setTimeout> | null = null;
-  private lastAffectedTime: number = 0;
-  private affectedCooldown: number = AI_CONFIG.affectedCooldown;
   public lastLoggedAttackTargetId: string | null = null; // Track last logged attack target
   public memoryStream: MemoryStream = new MemoryStream();
+  private lastReflexTime: number = 0;
+  private isReflexAction: boolean = false; // tracks if current action came from reflex
+
+  get disposition(): CombatDisposition {
+    return PROFESSION_DISPOSITION[this.character.profession] || "defensive";
+  }
 
   constructor(character: Character) {
     this.character = character;
@@ -73,10 +83,13 @@ export class AIController {
       return moveState; // No actions if dead
     }
 
-    if (this.isAffectedByEntities()) {
-      this.decideNextAction();
-      this.actionTimer = AI_CONFIG.actionTimerBase + Math.random() * AI_CONFIG.actionTimerVariance;
+    // Update observation for reflex checks
+    if (this.character.game) {
+      updateObservation(this, this.character.game.entities);
     }
+
+    // Reflex layer: instant rule-based reactions (no API call)
+    this.evaluateReflex();
 
     const currentTime = Date.now();
     this.actionTimer -= deltaTime;
@@ -278,6 +291,29 @@ export class AIController {
         }
         break;
 
+      case "fleeing":
+        if (this.destination) {
+          const fleeDir = this.destination
+            .clone()
+            .sub(this.character.mesh!.position);
+          fleeDir.y = 0;
+          const fleeDist = fleeDir.length();
+          if (fleeDist > this.stoppingDistance) {
+            fleeDir.normalize();
+            this.character.lookAt(
+              this.character.mesh!.position.clone().add(fleeDir)
+            );
+            moveState.forward = 1;
+            moveState.sprint = true;
+          } else {
+            // Reached flee destination, go idle
+            this.resetStateAfterAction();
+          }
+        } else {
+          this.resetStateAfterAction();
+        }
+        break;
+
       default:
         console.warn(`Unhandled AI state: ${this.aiState}`);
         this.aiState = "idle";
@@ -296,9 +332,10 @@ export class AIController {
     this.message = null;
     this.tradeItemsGive = [];
     this.tradeItemsReceive = [];
-    this.persistentAction = null; // Clear persistent action when resetting
-    this.actionTimer = 3 + Math.random() * 4; // Short cooldown after action
-    this.lastLoggedAttackTargetId = null; // Reset logged target on state reset
+    this.persistentAction = null;
+    this.isReflexAction = false;
+    this.actionTimer = 3 + Math.random() * 4;
+    this.lastLoggedAttackTargetId = null;
   }
 
   private handleTargetLostOrDepleted(): void {
@@ -359,39 +396,241 @@ export class AIController {
     }, AI_CONFIG.chatDecisionDelay);
   }
 
-  private justCompletedAction(): boolean {
-    return this.previousAiState !== "idle" && this.aiState === "idle";
-  }
+  // --- Reflex System ---
 
-  private isAffectedByEntities(): boolean {
-    const currentTime = Date.now();
+  private evaluateReflex(): void {
+    const now = Date.now();
+    if (now - this.lastReflexTime < REFLEX_CONFIG.reflexCooldown) return;
+    if (!this.observation) return;
+    // Don't override deliberate API actions unless it's another reflex or idle/roaming
+    if (this.aiState === "deciding") return;
 
-    if (currentTime < this.lastAffectedTime + this.affectedCooldown) {
-      return false;
-    }
+    const selfHealth = this.observation.self.health;
+    const maxHealth = this.character.maxHealth;
+    const healthRatio = selfHealth / maxHealth;
+    const disposition = this.disposition;
 
-    if (!this.observation || !this.lastObservation) return false;
-
-    if (this.observation.self.health < this.lastObservation.self.health) {
-      this.lastAffectedTime = currentTime;
-      return true;
-    }
-
-    const currentCharacters = this.observation.nearbyCharacters;
-    const lastCharacters = this.lastObservation.nearbyCharacters;
-    for (const currChar of currentCharacters) {
-      const matchingLastChar = lastCharacters.find((c) => c.id === currChar.id);
-      if (
-        !matchingLastChar ||
-        currChar.health < matchingLastChar.health ||
-        currChar.isDead !== matchingLastChar.isDead
-      ) {
-        this.lastAffectedTime = currentTime;
-        return true;
+    // Priority 1: LOW HEALTH — self-preservation overrides everything
+    if (
+      healthRatio < REFLEX_CONFIG.fleeHealthThreshold &&
+      this.aiState !== "fleeing"
+    ) {
+      const threat = this.findNearestThreat();
+      if (threat) {
+        this.lastReflexTime = now;
+        this.triggerFlee(threat, "Low health, retreating!");
+        return;
       }
     }
 
-    return false;
+    // Priority 2: SELF UNDER ATTACK
+    if (this.lastObservation && selfHealth < this.lastObservation.self.health) {
+      const attacker = this.findAttacker();
+      if (attacker) {
+        this.lastReflexTime = now;
+
+        if (disposition === "cautious" && healthRatio < REFLEX_CONFIG.cautiousFightThreshold) {
+          this.triggerFlee(attacker, "I'm hurt, running away!");
+        } else {
+          // aggressive, defensive, or cautious with enough health: fight back
+          this.triggerAttack(attacker, "Defending myself!");
+        }
+        return;
+      }
+    }
+
+    // Priority 3: NEARBY ENTITY UNDER ATTACK (within searchRadius)
+    const combatEvent = this.detectNearbyCombat();
+    if (combatEvent) {
+      this.lastReflexTime = now;
+
+      if (disposition === "aggressive") {
+        // Engage the attacker to help the victim
+        this.triggerAttack(combatEvent.attacker, `Helping ${combatEvent.victimName}!`);
+      } else if (disposition === "defensive" && combatEvent.victimIsCharacter) {
+        // Defensive: only help other characters (not animals)
+        this.triggerAttack(combatEvent.attacker, `Protecting ${combatEvent.victimName}!`);
+      } else if (disposition === "cautious") {
+        this.triggerFlee(combatEvent.attacker, "Danger nearby, fleeing!");
+      }
+      return;
+    }
+
+    // Priority 4: HOSTILE ENTITY NEARBY (aggressive animal, no active combat)
+    if (disposition === "aggressive" && this.aiState !== "movingToTarget") {
+      const hostile = this.findNearestHostile();
+      if (hostile) {
+        this.lastReflexTime = now;
+        this.triggerAttack(hostile, "Engaging hostile creature!");
+        return;
+      }
+    } else if (disposition === "cautious" && this.aiState === "idle") {
+      const hostile = this.findNearestHostile();
+      if (hostile) {
+        const distSq = this.character.mesh!.position.distanceToSquared(hostile.mesh!.position);
+        // Only flee if the hostile is getting close (within half search radius)
+        if (distSq < (this.searchRadius * 0.5) ** 2) {
+          this.lastReflexTime = now;
+          this.triggerFlee(hostile, "Hostile creature nearby!");
+          return;
+        }
+      }
+    }
+  }
+
+  private triggerAttack(target: Entity, intent: string): void {
+    // Don't interrupt non-reflex API-driven actions (chat, trade, follow)
+    if (!this.isReflexAction && this.targetAction && this.targetAction !== "attack") return;
+
+    this.target = target;
+    this.targetAction = "attack";
+    this.persistentAction = { type: "attack", targetId: target.id };
+    this.aiState = "movingToTarget";
+    this.isReflexAction = true;
+    this.currentIntent = intent;
+    this.character.updateIntentDisplay(intent);
+
+    this.encodeActionMemory("attack", target.name, `I decided to fight ${target.name}: ${intent}`);
+
+    if (this.character.game) {
+      this.character.game.logEvent(
+        this.character,
+        "reflex",
+        `${this.character.name}: ${intent}`,
+        target,
+        { reflex: true },
+        this.character.mesh!.position
+      );
+    }
+  }
+
+  private triggerFlee(threat: Entity, intent: string): void {
+    const selfPos = this.character.mesh!.position;
+    const threatPos = threat.mesh!.position;
+
+    // Flee in opposite direction from threat
+    const fleeDirection = selfPos.clone().sub(threatPos);
+    fleeDirection.y = 0;
+    fleeDirection.normalize();
+
+    const fleeDistance = this.roamRadius;
+    this.destination = selfPos
+      .clone()
+      .add(fleeDirection.multiplyScalar(fleeDistance));
+
+    if (this.character.scene) {
+      this.destination.y = getTerrainHeight(
+        this.character.scene,
+        this.destination.x,
+        this.destination.z
+      );
+    }
+
+    this.target = null;
+    this.targetAction = null;
+    this.persistentAction = null;
+    this.aiState = "fleeing";
+    this.isReflexAction = true;
+    this.actionTimer = REFLEX_CONFIG.fleeDuration;
+    this.currentIntent = intent;
+    this.character.updateIntentDisplay(intent);
+
+    this.encodeActionMemory("attack", threat.name, `I fled from ${threat.name}: ${intent}`);
+
+    if (this.character.game) {
+      this.character.game.logEvent(
+        this.character,
+        "reflex",
+        `${this.character.name}: ${intent}`,
+        threat,
+        { reflex: true, flee: true },
+        this.character.mesh!.position
+      );
+    }
+  }
+
+  private findAttacker(): Entity | null {
+    // Use lastAttacker from entity (set by combat system)
+    const attacker = this.character.lastAttacker;
+    if (attacker && !attacker.isDead && attacker.mesh) {
+      const distSq = this.character.mesh!.position.distanceToSquared(attacker.mesh.position);
+      if (distSq < this.searchRadius * this.searchRadius) {
+        return attacker;
+      }
+    }
+    return null;
+  }
+
+  private findNearestThreat(): Entity | null {
+    // Any entity that recently attacked us or any nearby aggressive animal
+    return this.findAttacker() || this.findNearestHostile();
+  }
+
+  private findNearestHostile(): Entity | null {
+    if (!this.character.game) return null;
+    let nearest: Entity | null = null;
+    let minDistSq = this.searchRadius * this.searchRadius;
+    const selfPos = this.character.mesh!.position;
+
+    for (const entity of this.character.game.entities) {
+      if (entity === this.character || entity.isDead || !entity.mesh) continue;
+      if (entity instanceof Animal && entity.userData.isAggressive) {
+        const distSq = selfPos.distanceToSquared(entity.mesh.position);
+        if (distSq < minDistSq) {
+          minDistSq = distSq;
+          nearest = entity;
+        }
+      }
+    }
+    return nearest;
+  }
+
+  private detectNearbyCombat(): {
+    attacker: Entity;
+    victimName: string;
+    victimIsCharacter: boolean;
+  } | null {
+    if (!this.observation || !this.lastObservation) return null;
+
+    // Check if any nearby character lost health (someone is being attacked)
+    for (const curr of this.observation.nearbyCharacters) {
+      const prev = this.lastObservation.nearbyCharacters.find((c) => c.id === curr.id);
+      if (prev && curr.health < prev.health && !curr.isDead) {
+        // This character is under attack — find who's attacking them
+        const victim = this.character.game?.entities.find(
+          (e) => e.id === curr.id && e instanceof Character
+        ) as Character | undefined;
+        if (victim?.lastAttacker && !victim.lastAttacker.isDead) {
+          // Don't intervene if we ARE the attacker
+          if (victim.lastAttacker === this.character) return null;
+          return {
+            attacker: victim.lastAttacker,
+            victimName: curr.id,
+            victimIsCharacter: true,
+          };
+        }
+      }
+    }
+
+    // Check nearby animals losing health (could indicate player fighting)
+    for (const curr of this.observation.nearbyAnimals) {
+      const prev = this.lastObservation.nearbyAnimals.find((a) => a.id === curr.id);
+      if (prev && curr.health < prev.health && !curr.isDead && curr.isAggressive) {
+        // An aggressive animal is in combat nearby — the animal is the threat
+        const animal = this.character.game?.entities.find(
+          (e) => e.id === curr.id && e instanceof Animal
+        );
+        if (animal && !animal.isDead) {
+          return {
+            attacker: animal,
+            victimName: "someone",
+            victimIsCharacter: false,
+          };
+        }
+      }
+    }
+
+    return null;
   }
 
   async decideNextAction(): Promise<void> {
@@ -403,9 +642,7 @@ export class AIController {
       return;
     }
 
-    if (this.character.game) {
-      updateObservation(this, this.character.game.entities);
-    }
+    // Observation already updated by computeAIMoveState before reflex check
 
     // Encode notable changes as memories
     this.encodeObservationMemories();
@@ -540,10 +777,11 @@ export class AIController {
     this.message = null;
     this.tradeItemsGive = [];
     this.tradeItemsReceive = [];
-    this.persistentAction = null; // Clear persistent action on fallback
+    this.persistentAction = null;
+    this.isReflexAction = false;
     this.currentIntent = "Exploring";
     this.character.updateIntentDisplay(this.currentIntent);
-    this.lastLoggedAttackTargetId = null; // Reset logged target on fallback
+    this.lastLoggedAttackTargetId = null;
   }
 
   setActionFromAPI(actionData: {
@@ -572,6 +810,7 @@ export class AIController {
     this.tradeItemsReceive = [];
     this.persistentAction = null; // Reset persistent action by default
     this.lastLoggedAttackTargetId = null; // Reset logged target when setting new action
+    this.isReflexAction = false; // API action overrides reflex
 
     this.actionTimer = 5 + Math.random() * 5;
 
