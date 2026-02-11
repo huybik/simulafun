@@ -134,7 +134,10 @@ export class Controls {
       this.mouse.dy = 0;
       this.updateContinuousMoveState(); // Reset movement states
       this.moveState.attack = false; // Ensure attack state is reset
-      if (!this.game?.isUIPaused()) {
+      // Browser consumes Escape to exit pointer lock, so close chat here
+      if (this.game?.interactionSystem?.isChatOpen) {
+        this.game.interactionSystem.closeChatInterface();
+      } else if (!this.game?.isUIPaused()) {
         this.game?.setPauseState(true);
       }
     }
