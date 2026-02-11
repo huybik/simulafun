@@ -59,13 +59,15 @@ export class Controls {
   }
 
   initListeners(): void {
+    // Click/tap to close menus works on both desktop and mobile
+    document.addEventListener("click", this.boundOnClick, false);
+
     if (!this.game?.mobileControls?.isActive()) {
       document.addEventListener("keydown", this.boundOnKeyDown, false);
       document.addEventListener("keyup", this.boundOnKeyUp, false);
       document.addEventListener("mousedown", this.boundOnMouseDown, false);
       document.addEventListener("mouseup", this.boundOnMouseUp, false);
       document.addEventListener("mousemove", this.boundOnMouseMove, false);
-      this.domElement.addEventListener("click", this.boundOnClick, false);
       document.addEventListener(
         "pointerlockchange",
         this.boundOnPointerLockChange,
@@ -77,7 +79,6 @@ export class Controls {
         false
       );
     } else {
-      // Only listen for Escape key on mobile for menu closing
       document.addEventListener("keydown", (e) => {
         if (e.code === "Escape") this.handleEscapeKey();
       });
@@ -139,9 +140,10 @@ export class Controls {
       // If Escape closed a UI, don't pause — just let the user click to re-lock.
       if (this._relockAfterEscape) {
         this._relockAfterEscape = false;
-      } else if (this.game?.interactionSystem?.isChatOpen) {
-        this.game.interactionSystem.closeChatInterface();
-      } else if (!this.game?.isUIPaused()) {
+      } else if (
+        !this.game?.isUIPaused() &&
+        !this.game?.interactionSystem?.isChatOpen
+      ) {
         this.game?.setPauseState(true);
       }
     }
@@ -217,33 +219,27 @@ export class Controls {
   }
 
   onClick(event: MouseEvent): void {
-    if (this.game?.mobileControls?.isActive()) return;
-
     const targetElement = event.target as HTMLElement;
     const isClickOnUI =
       this.game?.uiManager?.isClickOnInteractableUI(targetElement);
 
-    if (this.isPointerLocked) {
-      // If pointer is locked, clicks should not interact with background UI or close menus
-      return;
-    }
+    if (this.isPointerLocked) return;
 
-    // If clicking outside interactable UI elements and a menu is open, close it
+    // Tap/click outside UI closes open menus (works on both desktop and mobile)
     if (!isClickOnUI) {
       const closedSomething = this.game?.uiManager?.closeOpenMenus();
-      // If we closed something, don't try to lock pointer immediately
-      if (closedSomething) {
-        return;
-      }
+      if (closedSomething) return;
     }
 
-    // If click was on the game container itself (not UI) and not pointer locked, request lock
-    const isGameContainerClick =
-      targetElement === this.domElement ||
-      (this.domElement.contains(targetElement) && !isClickOnUI);
+    // Desktop only: click on game area to lock pointer
+    if (!this.game?.mobileControls?.isActive()) {
+      const isGameContainerClick =
+        targetElement === this.domElement ||
+        (this.domElement.contains(targetElement) && !isClickOnUI);
 
-    if (isGameContainerClick && !this.isPointerLocked) {
-      this.lockPointer();
+      if (isGameContainerClick) {
+        this.lockPointer();
+      }
     }
   }
 
@@ -291,7 +287,6 @@ export class Controls {
       document.removeEventListener("mousedown", this.boundOnMouseDown);
       document.removeEventListener("mouseup", this.boundOnMouseUp);
       document.removeEventListener("mousemove", this.boundOnMouseMove);
-      this.domElement.removeEventListener("click", this.boundOnClick);
       document.removeEventListener(
         "pointerlockchange",
         this.boundOnPointerLockChange
@@ -300,9 +295,7 @@ export class Controls {
         "pointerlockerror",
         this.boundOnPointerLockError
       );
-    } else {
-      // Remove the specific listener added for mobile
-      document.removeEventListener("keydown", this.handleEscapeKey);
     }
+    document.removeEventListener("click", this.boundOnClick);
   }
 }

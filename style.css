@@ -845,7 +845,7 @@ li.quest-completed:hover {
   opacity: 0.5;
 }
 
-#chat-close-btn {
+.menu-close-btn {
   position: absolute;
   top: 6px;
   right: 8px;
@@ -860,7 +860,7 @@ li.quest-completed:hover {
   transition: color 0.15s ease, background 0.15s ease;
   z-index: 1;
 }
-#chat-close-btn:hover {
+.menu-close-btn:hover {
   color: #fff;
   background: rgba(255, 255, 255, 0.1);
 }

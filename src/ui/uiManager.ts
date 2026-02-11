@@ -77,6 +77,12 @@ export class UIManager {
     this.mobileSwitchButton = document.getElementById("button-switch"); // Get switch button
     this.mobileJoystickZone = document.getElementById("joystick-zone-left");
 
+    // Banner close button
+    const bannerCloseBtn = this.bannerElement?.querySelector(".menu-close-btn");
+    if (bannerCloseBtn) {
+      bannerCloseBtn.addEventListener("click", () => this.hideBanner());
+    }
+
     // Setup Icon Button Listeners (for both desktop and mobile)
     this.setupIconButtons();
   }

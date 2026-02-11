@@ -22,6 +22,11 @@ export class JournalDisplay {
     this.boundUpdateQuests = this.updateQuests.bind(this);
     this.eventLog.onChange(this.boundUpdateEvents);
     if (this.displayElement) this.displayElement.classList.add("hidden");
+
+    const closeBtn = this.displayElement?.querySelector(".menu-close-btn");
+    if (closeBtn) {
+      closeBtn.addEventListener("click", () => this.hide());
+    }
   }
 
   updateQuests(): void {

@@ -417,6 +417,7 @@ export class InteractionSystem {
     this.isChatOpen = true;
     this.chatTarget = target;
     this.chatContainer.classList.remove("hidden");
+    this.controls.unlockPointer();
     this.handleChatInput();
 
     // Restore chat history for this character
@@ -493,6 +494,9 @@ export class InteractionSystem {
 
     // Return camera to normal
     this.game.thirdPersonCamera?.setConversationTarget(null);
+
+    // Re-lock pointer on desktop
+    this.controls.lockPointer();
   }
 
   private async processChatMessage(

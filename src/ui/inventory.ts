@@ -35,6 +35,11 @@ export class InventoryDisplay {
     this.boundHandleSlotClick = this.handleSlotClick.bind(this);
     this.boundUpdateDisplay = this.updateDisplay.bind(this);
 
+    const closeBtn = this.displayElement?.querySelector(".menu-close-btn");
+    if (closeBtn) {
+      closeBtn.addEventListener("click", () => this.hide());
+    }
+
     if (this.slotsContainer) {
       this.createSlots();
       // Use event delegation on the container for clicks
