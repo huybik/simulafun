@@ -12,6 +12,7 @@ export class Controls {
   keys: KeyState = {};
   mouse: MouseState = { x: 0, y: 0, dx: 0, dy: 0, buttons: {} };
   isPointerLocked: boolean = false;
+  private _relockAfterEscape: boolean = false;
   playerRotationSensitivity: number = 0.0025;
   maxYawPerFrame: number = 0.08; // ~4.5 degrees max rotation per frame
   moveState: MoveState = {
@@ -132,10 +133,13 @@ export class Controls {
       this.mouse.buttons = {};
       this.mouse.dx = 0;
       this.mouse.dy = 0;
-      this.updateContinuousMoveState(); // Reset movement states
-      this.moveState.attack = false; // Ensure attack state is reset
-      // Browser consumes Escape to exit pointer lock, so close chat here
-      if (this.game?.interactionSystem?.isChatOpen) {
+      this.updateContinuousMoveState();
+      this.moveState.attack = false;
+
+      // If Escape closed a UI, don't pause — just let the user click to re-lock.
+      if (this._relockAfterEscape) {
+        this._relockAfterEscape = false;
+      } else if (this.game?.interactionSystem?.isChatOpen) {
         this.game.interactionSystem.closeChatInterface();
       } else if (!this.game?.isUIPaused()) {
         this.game?.setPauseState(true);
@@ -176,8 +180,10 @@ export class Controls {
   }
 
   handleEscapeKey(): void {
-    // Delegate closing logic to UIManager
-    this.game?.uiManager?.closeTopmostUI();
+    const closed = this.game?.uiManager?.closeTopmostUI();
+    if (closed) {
+      this._relockAfterEscape = true;
+    }
   }
 
   onMouseDown(event: MouseEvent): void {
