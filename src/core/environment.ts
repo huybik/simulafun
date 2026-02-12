@@ -5,12 +5,11 @@ import {
   Object3D,
   Group,
   AnimationClip,
-  MathUtils,
   Mesh,
   Box3,
 } from "three";
 import { Character } from "../entities/character";
-import { Animal } from "../entities/animals"; // Import Animal
+import { Animal } from "../entities/animals";
 import {
   createTree,
   createRock,
@@ -25,7 +24,21 @@ import {
   ProfessionStartingWeapon,
   getItemDefinition,
   isWeapon,
-} from "./items"; // Import Profession utils
+} from "./items";
+
+function collectTemplates(
+  models: Record<string, { scene: Group; animations: AnimationClip[] }>,
+  ...prefixes: string[]
+): Group[] {
+  return Object.entries(models)
+    .filter(([key]) => prefixes.some((p) => key.startsWith(p)))
+    .map(([, m]) => m.scene)
+    .filter(Boolean);
+}
+
+function pickRandom<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
 
 export function populateEnvironment(
   scene: Scene,
@@ -41,18 +54,24 @@ export function populateEnvironment(
   const villageCenter = new Vector3(5, 0, 10);
   const villageRadiusSq = 15 * 15;
 
-  // Retrieve the terrain mesh from the scene
   const terrain = scene.getObjectByName("Terrain") as Mesh;
   if (!terrain) {
     console.error("Terrain not found in scene!");
     return;
   }
 
+  // Collect environment templates from loaded models
+  const treeTemplates = collectTemplates(models, "env_tree_", "env_pine_");
+  const rockTemplates = collectTemplates(models, "env_rock_");
+  const herbTemplates = collectTemplates(models, "env_bush_", "env_herb_");
+  const grassTemplates = collectTemplates(models, "env_grass_");
+  const flowerTemplates = collectTemplates(models, "env_flower_");
+
   const addCharacter = (
     pos: Vector3,
     name: string,
     modelKey: string,
-    profession: Profession, // Add profession parameter
+    profession: Profession,
     isPlayer: boolean = false
   ): Character => {
     const model = models[modelKey];
@@ -66,9 +85,9 @@ export function populateEnvironment(
       charInventory
     );
     character.mesh!.position.y = getTerrainHeight(scene, pos.x, pos.z);
-    character.homePosition = character.mesh!.position.clone(); // Set home position after terrain height adjustment
+    character.homePosition = character.mesh!.position.clone();
     character.game = gameInstance;
-    character.profession = profession; // Assign profession
+    character.profession = profession;
 
     if (isPlayer) {
       character.name = "Player";
@@ -81,17 +100,15 @@ export function populateEnvironment(
       if (!character.aiController)
         console.warn(`NPC ${name} created without AIController!`);
       else {
-        character.aiController.homePosition = character.homePosition.clone(); // Ensure AI home position is set
+        character.aiController.homePosition = character.homePosition.clone();
       }
 
-      // Give starting weapon based on profession for NPCs
       const startingWeaponId = ProfessionStartingWeapon[profession];
       if (startingWeaponId) {
         const addResult = character.inventory?.addItem(startingWeaponId, 1);
         if (addResult && addResult.totalAdded > 0) {
           const weaponDef = getItemDefinition(startingWeaponId);
           if (weaponDef && isWeapon(weaponDef)) {
-            // Use requestAnimationFrame to delay slightly, ensuring bones are ready.
             requestAnimationFrame(() => {
               character.equipWeapon(weaponDef);
             });
@@ -106,7 +123,6 @@ export function populateEnvironment(
         }
       }
     }
-    // Add starting gold
     character.inventory?.addItem("coin", 10);
 
     entities.push(character);
@@ -120,7 +136,7 @@ export function populateEnvironment(
     villageCenter.clone().add(new Vector3(-12, 0, 2)),
     "Farmer Giles",
     "tavernMan",
-    Profession.Farmer // Assign Farmer profession
+    Profession.Farmer
   );
   farmerGiles.persona =
     "A hardworking farmer who values community and is always willing to help others. He is knowledgeable about crops and livestock but can be a bit stubborn. He prefers to stay close to his farm but will venture out if necessary.";
@@ -131,7 +147,7 @@ export function populateEnvironment(
     villageCenter.clone().add(new Vector3(10, 0, -3)),
     "Blacksmith Brynn",
     "woman",
-    Profession.Blacksmith // Assign Blacksmith profession
+    Profession.Blacksmith
   );
   blacksmithBrynn.persona =
     "A skilled artisan who takes pride in her work. She is strong-willed and independent, often focused on her craft. She can be gruff but has a kind heart, especially towards those in need.";
@@ -142,7 +158,7 @@ export function populateEnvironment(
     new Vector3(halfSize * 0.4, 0, -halfSize * 0.3),
     "Hunter Rex",
     "oldMan",
-    Profession.Hunter // Assign Hunter profession
+    Profession.Hunter
   );
   hunterRex.persona =
     "An experienced tracker and survivalist. He is quiet and observant, preferring the wilderness over the village. He is resourceful and can be relied upon in tough situations but is not very social.";
@@ -151,58 +167,54 @@ export function populateEnvironment(
 
   // Add Objects (Trees, Rocks, Herbs)
   const addObject = (
-    creator: (pos: Vector3, ...args: any[]) => Group,
+    creator: (pos: Vector3) => Group,
     count: number,
-    minDistSq: number,
-    ...args: any[]
+    minDistSq: number
   ) => {
     for (let i = 0; i < count; i++) {
       const x = randomFloat(-halfSize * 0.95, halfSize * 0.95);
       const z = randomFloat(-halfSize * 0.95, halfSize * 0.95);
       const distSq = (x - villageCenter.x) ** 2 + (z - villageCenter.z) ** 2;
-      if (distSq < minDistSq) continue; // Avoid spawning too close to village
+      if (distSq < minDistSq) continue;
 
-      const obj = creator(new Vector3(x, 0, z), ...args);
+      const obj = creator(new Vector3(x, 0, z));
       const height = getTerrainHeight(scene, x, z);
       obj.position.y = height;
-      if (obj.name === "Herb Plant") obj.position.y = height + 0.5; // Adjust herb height slightly
 
       scene.add(obj);
       if (obj.userData.isCollidable) collidableObjects.push(obj);
-      // Resources are interactable in the sense that they can be targeted for attack
       if (obj.userData.isInteractable) interactableObjects.push(obj);
-      entities.push(obj); // Add to entities for potential minimap display if needed later
+      entities.push(obj);
       obj.userData.id = `${obj.name}_${obj.uuid.substring(0, 6)}`;
 
-      // Update bounding box AFTER setting the final position
-      obj.updateMatrixWorld(true); // Ensure world matrix is current
-      if (obj.name === "Tree") {
-        const trunk = obj.getObjectByName("TreeTrunk") as Mesh;
-        if (trunk && obj.userData.boundingBox instanceof Box3) {
-          // Recompute the bounding box from the trunk using its updated world matrix
-          obj.userData.boundingBox.setFromObject(trunk, true);
-        } else {
-          // Fallback for non-trees or if trunk/box is missing
-          obj.userData.boundingBox?.setFromObject(obj, true);
-        }
-      } else if (obj.userData.boundingBox instanceof Box3) {
-        // Update box for other objects like rocks/herbs
+      obj.updateMatrixWorld(true);
+      if (obj.userData.boundingBox instanceof Box3) {
         obj.userData.boundingBox.setFromObject(obj, true);
-      } else {
-        // If no box exists, create one (shouldn't happen with current setup)
-        obj.userData.boundingBox = new Box3().setFromObject(obj, true);
       }
     }
   };
 
-  addObject(createTree, worldSize, 25 * 25);
-  addObject(
-    createRock,
-    Math.floor(worldSize / 2),
-    20 * 20,
-    randomFloat(1, 2.5)
-  );
-  addObject(createHerb, Math.floor(worldSize / 5), 10 * 10);
+  if (treeTemplates.length > 0) {
+    addObject(
+      (pos) => createTree(pos, pickRandom(treeTemplates)),
+      worldSize,
+      25 * 25
+    );
+  }
+  if (rockTemplates.length > 0) {
+    addObject(
+      (pos) => createRock(pos, randomFloat(1, 2.5), pickRandom(rockTemplates)),
+      Math.floor(worldSize / 2),
+      20 * 20
+    );
+  }
+  if (herbTemplates.length > 0) {
+    addObject(
+      (pos) => createHerb(pos, pickRandom(herbTemplates)),
+      Math.floor(worldSize / 5),
+      10 * 10
+    );
+  }
 
   // Add Animals
   const addAnimal = (
@@ -222,7 +234,7 @@ export function populateEnvironment(
       const x = randomFloat(-halfSize * 0.9, halfSize * 0.9);
       const z = randomFloat(-halfSize * 0.9, halfSize * 0.9);
       const distSq = (x - villageCenter.x) ** 2 + (z - villageCenter.z) ** 2;
-      if (distSq < minDistSq) continue; // Avoid spawning too close to village
+      if (distSq < minDistSq) continue;
 
       const pos = new Vector3(x, 0, z);
       pos.y = getTerrainHeight(scene, x, z);
@@ -232,22 +244,19 @@ export function populateEnvironment(
         pos,
         `${animalType} ${i + 1}`,
         animalType,
-        model.scene.clone(), // Clone the model scene
-        model.animations // Share animations
+        model.scene.clone(),
+        model.animations
       );
       animal.game = gameInstance;
-      // animal.homePosition is set in constructor
 
       entities.push(animal);
       collidableObjects.push(animal.mesh!);
-      // Animals are interactable (can be targeted for attack)
       interactableObjects.push(animal);
     }
   };
 
-  // Spawn some deer and wolves
-  addAnimal("Deer", "deer_procedural", 5, 20 * 20); // Spawn 5 deer, further out
-  addAnimal("Wolf", "wolf_procedural", 5, 40 * 40); // Spawn 3 wolves, even further out
+  addAnimal("Deer", "deer_procedural", 5, 20 * 20);
+  addAnimal("Wolf", "wolf_procedural", 5, 40 * 40);
 
   // Add Decorative Grass and Flowers
   const addDecoration = (
@@ -269,13 +278,19 @@ export function populateEnvironment(
     }
   };
 
-  // Add Grass Patches
-  addDecoration(createGrassPatch, Math.floor(worldSize * 0.3), villageRadiusSq);
+  if (grassTemplates.length > 0) {
+    addDecoration(
+      (pos, t) => createGrassPatch(pos, t, grassTemplates),
+      Math.floor(worldSize * 0.8),
+      villageRadiusSq
+    );
+  }
 
-  // Add Flower Patches
-  addDecoration(
-    createFlowerPatch,
-    Math.floor(worldSize * 0.15),
-    villageRadiusSq
-  );
+  if (flowerTemplates.length > 0) {
+    addDecoration(
+      (pos, t) => createFlowerPatch(pos, t, flowerTemplates),
+      Math.floor(worldSize * 0.15),
+      villageRadiusSq
+    );
+  }
 }

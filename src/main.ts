@@ -142,15 +142,52 @@ export class Game {
     this.audioElement = initializeGame.initAudio(); // Use initializer
 
     // --- Phase 2: Background Asset Loading ---
-    const modelPaths = {
+    const modelPaths: Record<string, string> = {
       player: "assets/player.glb",
       tavernMan: "assets/tavernman.glb",
       oldMan: "assets/oldman.glb",
       woman: "assets/woman.glb",
-      // Add weapon models here
       "sword.glb": "assets/items/weapons/sword.glb",
       "axe.glb": "assets/items/weapons/axe.glb",
       "pickaxe.glb": "assets/items/weapons/pickaxe.glb",
+      // Environment - Trees
+      env_tree_1: "assets/environment/CommonTree_1.gltf",
+      env_tree_2: "assets/environment/CommonTree_2.gltf",
+      env_tree_3: "assets/environment/CommonTree_3.gltf",
+      env_tree_4: "assets/environment/CommonTree_4.gltf",
+      env_tree_5: "assets/environment/CommonTree_5.gltf",
+      env_pine_1: "assets/environment/Pine_1.gltf",
+      env_pine_2: "assets/environment/Pine_2.gltf",
+      env_pine_3: "assets/environment/Pine_3.gltf",
+      // Environment - Rocks
+      env_rock_1: "assets/environment/Rock_Medium_1.gltf",
+      env_rock_2: "assets/environment/Rock_Medium_2.gltf",
+      env_rock_3: "assets/environment/Rock_Medium_3.gltf",
+      // Environment - Bushes / Herbs
+      env_bush_1: "assets/environment/Bush_Common.gltf",
+      env_bush_2: "assets/environment/Bush_Common_Flowers.gltf",
+      env_herb_1: "assets/environment/Plant_1.gltf",
+      env_herb_2: "assets/environment/Fern_1.gltf",
+      env_herb_3: "assets/environment/Mushroom_Common.gltf",
+      // Environment - Grass & Ground Cover
+      env_grass_1: "assets/environment/Grass_Common_Short.gltf",
+      env_grass_2: "assets/environment/Grass_Common_Tall.gltf",
+      env_grass_3: "assets/environment/Grass_Wispy_Short.gltf",
+      env_grass_4: "assets/environment/Grass_Wispy_Tall.gltf",
+      env_grass_5: "assets/environment/Clover_1.gltf",
+      env_grass_6: "assets/environment/Clover_2.gltf",
+      env_grass_7: "assets/environment/Fern_1.gltf",
+      env_grass_8: "assets/environment/Plant_7.gltf",
+      env_grass_9: "assets/environment/Petal_1.gltf",
+      env_grass_10: "assets/environment/Petal_2.gltf",
+      env_grass_11: "assets/environment/Petal_3.gltf",
+      env_grass_12: "assets/environment/Mushroom_Common.gltf",
+      env_grass_13: "assets/environment/Mushroom_Laetiporus.gltf",
+      // Environment - Flowers
+      env_flower_1: "assets/environment/Flower_3_Group.gltf",
+      env_flower_2: "assets/environment/Flower_4_Group.gltf",
+      env_flower_3: "assets/environment/Flower_3_Single.gltf",
+      env_flower_4: "assets/environment/Flower_4_Single.gltf",
     };
     // Start loading models but don't await here
     this.modelsPromise = loadModels(modelPaths);
